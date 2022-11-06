@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Linq;
+using System.Security.Policy;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
@@ -65,7 +66,7 @@ namespace wpf2
         {
             OpenFileDialog openFileDialog = new OpenFileDialog
             {
-                InitialDirectory = @"D:\Downloads\ppm-obrazy-testowe\ppm-obrazy-testowe",
+                InitialDirectory = @"C:\Users\kryst\Downloads",
                 Filter = "Images|*.ppm;*.jpg;*.jpeg",
                 RestoreDirectory = true,
                 Title = "Wybierz plik",
@@ -87,7 +88,7 @@ namespace wpf2
                 bitmapBackup = new Bitmap(fileLoader.Bitmap);
                 currentImage.Source = source;
 
-     
+
                 var scale1 = main_canvas.ActualWidth / currentBitmap.Width;
                 var scale2 = main_canvas.ActualHeight / currentBitmap.Height;
 
@@ -128,7 +129,7 @@ namespace wpf2
 
 
             EncoderParameters myEncoderParameters = new EncoderParameters(1);
-            
+
             EncoderParameter myEncoderParameter = new EncoderParameter(myEncoder, jpgQuality);
             myEncoderParameters.Param[0] = myEncoderParameter;
             if (saveDialog.ShowDialog() == true)
@@ -162,7 +163,7 @@ namespace wpf2
 
         private void main_canvas_MouseWheel(object sender, MouseWheelEventArgs e)
         {
-            var change = e.Delta * .2;
+            var change = e.Delta * .5;
             currentImage.Height += change;
             currentImage.Width += change;
         }
@@ -221,7 +222,7 @@ namespace wpf2
 
             if (colorShift == null) return;
 
-            if(colorShift.R == 0 || colorShift.G == 0 || colorShift.B == 0)
+            if (colorShift.R == 0 || colorShift.G == 0 || colorShift.B == 0)
             {
                 MessageBox.Show("Value can't be 0!");
                 return;
@@ -309,18 +310,22 @@ namespace wpf2
         {
             var selectedFilter = filter_selection.SelectedIndex;
 
-            switch(selectedFilter)
+            switch (selectedFilter)
             {
                 case 0:
                     AveragingFilter();
                     break;
                 case 1:
+                    MedianFilter();
                     break;
                 case 2:
+                    SobelFilter();
                     break;
                 case 3:
+                    HighpassFilter();
                     break;
                 case 4:
+                    GaussFilter();
                     break;
             }
         }
@@ -364,7 +369,7 @@ namespace wpf2
         private RGBColor CalculateAverage(List<System.Drawing.Color> pixels)
         {
             RGBColor result = new RGBColor();
-            foreach(var p in pixels)
+            foreach (var p in pixels)
             {
                 result.R += p.R;
                 result.G += p.G;
@@ -376,10 +381,230 @@ namespace wpf2
             return result;
         }
 
+        private void MedianFilter()
+        {
+            if (currentBitmap == null) return;
+
+            var copy = new Bitmap(currentBitmap);
+
+            int windowSize = 3; // px
+
+            for (int x = 0; x < currentBitmap.Width; x++)
+            {
+                for (int y = 0; y < currentBitmap.Height; y++)
+                {
+                    var neighbours = GetNeighbours(x, y, copy, windowSize);
+
+                    System.Drawing.Color color = GetMedian(neighbours);
+
+                    currentBitmap.SetPixel(x, y, color);
+
+                    neighbours.Clear();
+                }
+            }
+
+            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
+        }
+
+        private List<System.Drawing.Color> GetNeighbours(int x, int y, Bitmap copy, int windowSize)
+        {
+            int bitmapWidth = currentBitmap.Width;
+            int bitmapHeight = currentBitmap.Height;
+
+            List<System.Drawing.Color> neighbours = new List<System.Drawing.Color>();
+
+            int windowHalfSize = (int)Math.Floor((double)windowSize / 2);
+
+            for (int i = 0; i < windowSize; i++)
+            {
+                for (int j = 0; j < windowSize; j++)
+                {
+                    var a = x + i - windowHalfSize;
+                    var b = y + j - windowHalfSize;
+
+                    if (a < 0)
+                        a = 0;
+                    if (a >= bitmapWidth)
+                        a = bitmapWidth - 1;
+                    if (b < 0)
+                        b = 0;
+                    if (b >= bitmapHeight)
+                        b = bitmapHeight - 1;
+
+                    var pixel = copy.GetPixel(a, b);
+                    neighbours.Add(pixel);
+                }
+            }
+
+            return neighbours;
+        }
+
+        private System.Drawing.Color GetMedian(List<System.Drawing.Color> neighbours)
+        {
+            int R = (int)neighbours.Median(c => c.R);
+            int G = (int)neighbours.Median(c => c.G);
+            int B = (int)neighbours.Median(c => c.B);
+
+            return System.Drawing.Color.FromArgb(R, G, B);
+        }
+
+        private void SobelFilter()
+        {
+            if (currentBitmap == null) return;
+
+            var copy = new Bitmap(currentBitmap);
+
+            int[,] sobelX = {{-1, 0, 1},
+                                {-2, 0, 2},
+                                {-1, 0, 1}};
+
+            int[,] sobelY = {{-1, -2, -1},
+                                {0, 0, 0},
+                                {1, 2, 1}};
+
+            for (int x = 1; x < currentBitmap.Width - 1; x++)
+            {
+                for (int y = 1; y < currentBitmap.Height - 1; y++)
+                {
+                    var pixelX = (sobelX[0,0] * copy.GetPixel(x - 1, y - 1).GetGrayScale()) + 
+                                (sobelX[0,1] * copy.GetPixel(x, y - 1).GetGrayScale()) + 
+                                (sobelX[0,2] * copy.GetPixel(x + 1, y - 1).GetGrayScale()) +
+                                (sobelX[1,0] * copy.GetPixel(x - 1, y).GetGrayScale()) + 
+                                (sobelX[1,1] * copy.GetPixel(x, y).GetGrayScale()) + 
+                                (sobelX[1,2] * copy.GetPixel(x + 1, y).GetGrayScale()) +
+                                (sobelX[2,0] * copy.GetPixel(x - 1, y + 1).GetGrayScale()) + 
+                                (sobelX[2,1] * copy.GetPixel(x, y + 1).GetGrayScale()) + 
+                                (sobelX[2,2] * copy.GetPixel(x + 1, y + 1).GetGrayScale());
+
+                    var pixelY = (sobelY[0, 0] * copy.GetPixel(x - 1, y - 1).GetGrayScale()) +
+                                (sobelY[0, 1] * copy.GetPixel(x, y - 1).GetGrayScale()) +
+                                (sobelY[0, 2] * copy.GetPixel(x + 1, y - 1).GetGrayScale()) +
+                                (sobelY[1, 0] * copy.GetPixel(x - 1, y).GetGrayScale()) +
+                                (sobelY[1, 1] * copy.GetPixel(x, y).GetGrayScale()) +
+                                (sobelY[1, 2] * copy.GetPixel(x + 1, y).GetGrayScale()) +
+                                (sobelY[2, 0] * copy.GetPixel(x - 1, y + 1).GetGrayScale()) +
+                                (sobelY[2, 1] * copy.GetPixel(x, y + 1).GetGrayScale()) +
+                                (sobelY[2, 2] * copy.GetPixel(x + 1, y + 1).GetGrayScale());
+
+                    int value = (int)Math.Ceiling(Math.Sqrt((pixelX * pixelX) + (pixelY * pixelY)));
+                    value = NormaliseColor(value * 255 / 700);
+                    var color = System.Drawing.Color.FromArgb(value, value, value);
+
+                    currentBitmap.SetPixel(x, y, color);
+                }
+            }
+
+            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
+        }
+
+        private void HighpassFilter()
+        {
+            if (currentBitmap == null) return;
+
+            var copy = new Bitmap(currentBitmap);
+
+            int[,] matrix = {{0, -1, 0},
+                                {-1, 5, -1},
+                                {0, -1, 0}};
+
+            for (int x = 1; x < currentBitmap.Width - 1; x++)
+            {
+                for (int y = 1; y < currentBitmap.Height - 1; y++)
+                {
+                    var aa = copy.GetPixel(x - 1, y - 1);
+                    var ab = copy.GetPixel(x, y - 1);
+                    var ac = copy.GetPixel(x + 1, y - 1);
+                    var ba = copy.GetPixel(x - 1, y);
+                    var bb = copy.GetPixel(x, y);
+                    var bc = copy.GetPixel(x + 1, y);
+                    var ca = copy.GetPixel(x - 1, y + 1);
+                    var cb = copy.GetPixel(x, y + 1);
+                    var cc = copy.GetPixel(x + 1, y + 1);
+
+                    int R = (matrix[0, 0] * aa.R) + (matrix[0, 1] * ab.R) + (matrix[0, 2] * ac.R) +
+                            (matrix[1, 0] * ba.R) + (matrix[1, 1] * bb.R) + (matrix[1, 2] * bc.R) +
+                            (matrix[2, 0] * ca.R) + (matrix[2, 1] * cb.R) + (matrix[2, 2] * cc.R);
+
+                    int G = (matrix[0, 0] * aa.G) + (matrix[0, 1] * ab.G) + (matrix[0, 2] * ac.G) +
+                            (matrix[1, 0] * ba.G) + (matrix[1, 1] * bb.G) + (matrix[1, 2] * bc.G) +
+                            (matrix[2, 0] * ca.G) + (matrix[2, 1] * cb.G) + (matrix[2, 2] * cc.G);
+
+                    int B = (matrix[0, 0] * aa.B) + (matrix[0, 1] * ab.B) + (matrix[0, 2] * ac.B) +
+                            (matrix[1, 0] * ba.B) + (matrix[1, 1] * bb.B) + (matrix[1, 2] * bc.B) +
+                            (matrix[2, 0] * ca.B) + (matrix[2, 1] * cb.B) + (matrix[2, 2] * cc.B);
+
+                    var color = System.Drawing.Color.FromArgb(NormaliseColor(R), NormaliseColor(G), NormaliseColor(B));
+                    currentBitmap.SetPixel(x, y, color);
+                }
+            }
+
+            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
+        }
+
+        private void GaussFilter()
+        {
+            if (currentBitmap == null) return;
+
+            var copy = new Bitmap(currentBitmap);
+
+            int windowSize = 10;
+            double sigma = 100;
+
+            for (int x = 0; x < currentBitmap.Width; x++)
+            {
+                for (int y = 0; y < currentBitmap.Height; y++)
+                {
+                    List<double> gauss = GaussFunction(windowSize, sigma);
+                    double gaussSum = gauss.Sum(c => c);
+                    for (int i = 0; i < gauss.Count; i++)
+                        gauss[i] /= gaussSum;
+
+                    List<System.Drawing.Color> neighbours = GetNeighbours(x, y, copy, windowSize);
+                    List<RGBColorDouble> gaussedColors = new();
+                    for (int i = 0; i < neighbours.Count; i++)
+                    {
+                        double r = neighbours[i].R * gauss[i];
+                        double g = neighbours[i].G * gauss[i];
+                        double b = neighbours[i].B * gauss[i];
+                        gaussedColors.Add(new RGBColorDouble(r, g, b));
+                    }
+
+                    var R = (int)gaussedColors.Sum(c => c.R);
+                    var G = (int)gaussedColors.Sum(c => c.G);
+                    var B = (int)gaussedColors.Sum(c => c.B);
+                    var color = System.Drawing.Color.FromArgb(R, G, B);
+
+                    currentBitmap.SetPixel(x, y, color);
+                }
+            }
+
+            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
+        }
+
+        private List<double> GaussFunction(int windowSize, double sigma)
+        {
+            List<double> list = new();
+
+            int halfWindow = (int)Math.Floor((double)windowSize / 2);
+
+            for (int x = 0 - halfWindow; x < windowSize - halfWindow; x++)
+            {
+                for (int y = 0 - halfWindow; y < windowSize - halfWindow; y++)
+                {
+                    list.Add((1 / (2 * Math.PI * sigma * sigma)) * Math.Exp(-((x * x) + (y * y)) / (2 * sigma * sigma)));
+                }
+            }
+
+            return list;
+        }
+
         private void reset_button_Click(object sender, RoutedEventArgs e)
         {
-            if(bitmapBackup != null)
+            if (bitmapBackup != null)
+            {
+                currentBitmap = new Bitmap(bitmapBackup);
                 currentImage.Source = fileLoader.ConvertBitmap(bitmapBackup);
+            }
         }
 
         private RGBColor ParseRGBFromInput()
