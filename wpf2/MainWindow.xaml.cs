@@ -1,4 +1,6 @@
-﻿using Microsoft.Win32;
+﻿using Emgu.CV;
+using Emgu.CV.Structure;
+using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -29,7 +31,19 @@ namespace wpf2
         private double imageX, imageY;
         private double mouseX, mouseY;
         private bool isMovingViaMouse;
-        private Bitmap currentBitmap;
+
+        public Bitmap CurrentBitmap 
+        {
+            get => _currentBitmap;
+            set
+            {
+                _currentBitmap = value;
+                UpdateHistogram();
+            }
+        }
+
+
+        private Bitmap _currentBitmap;
         private Bitmap bitmapBackup;
 
         public MainWindow()
@@ -50,10 +64,10 @@ namespace wpf2
             var positionInImageX = mouseCurrentPoint.X - Canvas.GetLeft(currentImage);
             var positionInImageY = mouseCurrentPoint.Y - Canvas.GetTop(currentImage);
 
-            var normalisedPositionX = (int)Math.Floor(positionInImageX / currentImage.Width * currentBitmap.Width);
-            var normalisedPositionY = (int)Math.Floor(positionInImageY / currentImage.Height * currentBitmap.Height);
+            var normalisedPositionX = (int)Math.Floor(positionInImageX / currentImage.Width * CurrentBitmap.Width);
+            var normalisedPositionY = (int)Math.Floor(positionInImageY / currentImage.Height * CurrentBitmap.Height);
 
-            var pixel = currentBitmap.GetPixel(normalisedPositionX, normalisedPositionY);
+            var pixel = CurrentBitmap.GetPixel(normalisedPositionX, normalisedPositionY);
 
             var toolTip = new ToolTip();
             toolTip.IsOpen = true;
@@ -83,62 +97,33 @@ namespace wpf2
                     return;
                 }
 
-                currentBitmap = fileLoader.Bitmap;
+                CurrentBitmap = fileLoader.Bitmap;
                 bitmapBackup = new Bitmap(fileLoader.Bitmap);
                 currentImage.Source = source;
 
      
-                var scale1 = main_canvas.ActualWidth / currentBitmap.Width;
-                var scale2 = main_canvas.ActualHeight / currentBitmap.Height;
+                var scale1 = main_canvas.ActualWidth / CurrentBitmap.Width;
+                var scale2 = main_canvas.ActualHeight / CurrentBitmap.Height;
 
                 var scale = scale1 < scale2 ? scale1 : scale2;
-                currentImage.Height = currentBitmap.Height * scale;
-                currentImage.Width = currentBitmap.Width * scale;
+                currentImage.Height = CurrentBitmap.Height * scale;
+                currentImage.Width = CurrentBitmap.Width * scale;
                 Canvas.SetTop(currentImage, 0);
                 Canvas.SetLeft(currentImage, 0);
             }
         }
 
+        private void UpdateHistogram()
+        {
+            histogram.ClearHistogram();
+            histogram.GenerateHistograms(CurrentBitmap.ToImage<Bgr, byte>(), 256);
+            histogram.Refresh();
+        }
         private int NormaliseColor(int color)
         {
             if (color < 0) return 0;
             if (color > 255) return 255;
             return color;
-        }
-
-        private void save_button_Click(object sender, RoutedEventArgs e)
-        {
-            int jpgQuality;
-            if (!int.TryParse(jpg_quality.Text, out jpgQuality) || jpgQuality < 0 || jpgQuality > 100)
-            {
-                MessageBox.Show("Enter correct parameters!");
-                return;
-            }
-
-            var saveDialog = new SaveFileDialog();
-
-            saveDialog.FileName = "result";
-            saveDialog.DefaultExt = "jpg";
-            saveDialog.Filter = "JPG images (*.jpg)|*.jpg";
-
-            ImageCodecInfo jpgEncoder = GetEncoder(ImageFormat.Jpeg);
-
-            System.Drawing.Imaging.Encoder myEncoder =
-                System.Drawing.Imaging.Encoder.Quality;
-
-
-            EncoderParameters myEncoderParameters = new EncoderParameters(1);
-            
-            EncoderParameter myEncoderParameter = new EncoderParameter(myEncoder, jpgQuality);
-            myEncoderParameters.Param[0] = myEncoderParameter;
-            if (saveDialog.ShowDialog() == true)
-            {
-                var fileName = saveDialog.FileName;
-                if (!System.IO.Path.HasExtension(fileName) || System.IO.Path.GetExtension(fileName) != "jpg")
-                    fileName = fileName + ".jpg";
-
-                currentBitmap.Save(fileName, jpgEncoder, myEncoderParameters);
-            }
         }
 
         private void image_MouseMove(object sender, MouseEventArgs e)
@@ -167,100 +152,25 @@ namespace wpf2
             currentImage.Width += change;
         }
 
-        private void add_colors_button_Click(object sender, RoutedEventArgs e)
-        {
-            if (currentBitmap == null) return;
-
-            var colorShift = ParseRGBFromInput();
-
-            if (colorShift == null) return;
-
-            System.Drawing.Color c;
-
-            for (int x = 0; x < currentBitmap.Width; x++)
-            {
-                for (int y = 0; y < currentBitmap.Height; y++)
-                {
-                    c = currentBitmap.GetPixel(x, y);
-                    currentBitmap.SetPixel(x, y, System.Drawing.Color.FromArgb(0, NormaliseColor(c.R + colorShift.R), NormaliseColor(c.G + colorShift.G),
-                        NormaliseColor(c.B + colorShift.B)));
-                }
-            }
-
-            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
-        }
-
-        private void multiply_colors_button_Click(object sender, RoutedEventArgs e)
-        {
-            if (currentBitmap == null) return;
-
-            var colorShift = ParseRGBFromInput();
-
-            if (colorShift == null) return;
-
-            System.Drawing.Color c;
-
-            for (int x = 0; x < currentBitmap.Width; x++)
-            {
-                for (int y = 0; y < currentBitmap.Height; y++)
-                {
-                    c = currentBitmap.GetPixel(x, y);
-                    currentBitmap.SetPixel(x, y, System.Drawing.Color.FromArgb(0, NormaliseColor(c.R * colorShift.R), NormaliseColor(c.G * colorShift.G),
-                        NormaliseColor(c.B * colorShift.B)));
-                }
-            }
-
-            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
-        }
-
-        private void divide_button_Click(object sender, RoutedEventArgs e)
-        {
-            if (currentBitmap == null) return;
-
-            var colorShift = ParseRGBFromInput();
-
-            if (colorShift == null) return;
-
-            if(colorShift.R == 0 || colorShift.G == 0 || colorShift.B == 0)
-            {
-                MessageBox.Show("Value can't be 0!");
-                return;
-            }
-
-            System.Drawing.Color c;
-
-            for (int x = 0; x < currentBitmap.Width; x++)
-            {
-                for (int y = 0; y < currentBitmap.Height; y++)
-                {
-                    c = currentBitmap.GetPixel(x, y);
-                    currentBitmap.SetPixel(x, y, System.Drawing.Color.FromArgb(0, NormaliseColor(c.R / colorShift.R), NormaliseColor(c.G / colorShift.G),
-                        NormaliseColor(c.B / colorShift.B)));
-                }
-            }
-
-            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
-        }
-
         private void bw1_button_Click(object sender, RoutedEventArgs e)
         {
             System.Drawing.Color c;
             int newColor;
 
-            for (int x = 0; x < currentBitmap.Width; x++)
+            for (int x = 0; x < CurrentBitmap.Width; x++)
             {
-                for (int y = 0; y < currentBitmap.Height; y++)
+                for (int y = 0; y < CurrentBitmap.Height; y++)
                 {
-                    c = currentBitmap.GetPixel(x, y);
+                    c = CurrentBitmap.GetPixel(x, y);
 
                     newColor = (int)((c.R + c.G + c.B) / 3);
 
-                    currentBitmap.SetPixel(x, y, System.Drawing.Color.FromArgb(0, NormaliseColor(newColor), NormaliseColor(newColor),
+                    CurrentBitmap.SetPixel(x, y, System.Drawing.Color.FromArgb(0, NormaliseColor(newColor), NormaliseColor(newColor),
                         NormaliseColor(newColor)));
                 }
             }
 
-            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
+            currentImage.Source = fileLoader.ConvertBitmap(CurrentBitmap);
         }
 
         private void bw2_button_Click(object sender, RoutedEventArgs e)
@@ -268,97 +178,56 @@ namespace wpf2
             System.Drawing.Color c;
             int newColor;
 
-            for (int x = 0; x < currentBitmap.Width; x++)
+            for (int x = 0; x < CurrentBitmap.Width; x++)
             {
-                for (int y = 0; y < currentBitmap.Height; y++)
+                for (int y = 0; y < CurrentBitmap.Height; y++)
                 {
-                    c = currentBitmap.GetPixel(x, y);
+                    c = CurrentBitmap.GetPixel(x, y);
 
                     newColor = (int)(0.3 * c.R + 0.59 * c.G + 0.11 * c.B);
 
-                    currentBitmap.SetPixel(x, y, System.Drawing.Color.FromArgb(0, NormaliseColor(newColor), NormaliseColor(newColor),
+                    CurrentBitmap.SetPixel(x, y, System.Drawing.Color.FromArgb(0, NormaliseColor(newColor), NormaliseColor(newColor),
                         NormaliseColor(newColor)));
                 }
             }
 
-            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
-        }
-
-        private void brightness_button_Click(object sender, RoutedEventArgs e)
-        {
-            if (currentBitmap == null) return;
-
-            var brightnessShift = (int)brightness_slider.Value;
-
-            System.Drawing.Color c;
-
-            for (int x = 0; x < currentBitmap.Width; x++)
-            {
-                for (int y = 0; y < currentBitmap.Height; y++)
-                {
-                    c = currentBitmap.GetPixel(x, y);
-                    currentBitmap.SetPixel(x, y, System.Drawing.Color.FromArgb(0, NormaliseColor(c.R + brightnessShift), NormaliseColor(c.G + brightnessShift),
-                        NormaliseColor(c.B + brightnessShift)));
-                }
-            }
-
-            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
-        }
-
-        private void filter_button_Click(object sender, RoutedEventArgs e)
-        {
-            var selectedFilter = filter_selection.SelectedIndex;
-
-            switch(selectedFilter)
-            {
-                case 0:
-                    AveragingFilter();
-                    break;
-                case 1:
-                    break;
-                case 2:
-                    break;
-                case 3:
-                    break;
-                case 4:
-                    break;
-            }
+            currentImage.Source = fileLoader.ConvertBitmap(CurrentBitmap);
         }
 
         private void AveragingFilter()
         {
-            if (currentBitmap == null) return;
+            if (CurrentBitmap == null) return;
 
-            var copy = new Bitmap(currentBitmap);
+            var copy = new Bitmap(CurrentBitmap);
 
             List<System.Drawing.Color> c = new List<System.Drawing.Color>();
 
             RGBColor average;
 
-            for (int x = 0; x < currentBitmap.Width; x++)
+            for (int x = 0; x < CurrentBitmap.Width; x++)
             {
-                for (int y = 0; y < currentBitmap.Height; y++)
+                for (int y = 0; y < CurrentBitmap.Height; y++)
                 {
-                    if (x - 1 >= 0 && y + 1 < currentBitmap.Height) c.Add(copy.GetPixel(x - 1, y + 1));
-                    if (y + 1 < currentBitmap.Height) c.Add(copy.GetPixel(x, y + 1));
-                    if (x + 1 < currentBitmap.Width && y + 1 < currentBitmap.Height) c.Add(copy.GetPixel(x + 1, y + 1));
+                    if (x - 1 >= 0 && y + 1 < CurrentBitmap.Height) c.Add(copy.GetPixel(x - 1, y + 1));
+                    if (y + 1 < CurrentBitmap.Height) c.Add(copy.GetPixel(x, y + 1));
+                    if (x + 1 < CurrentBitmap.Width && y + 1 < CurrentBitmap.Height) c.Add(copy.GetPixel(x + 1, y + 1));
                     if (x - 1 >= 0) c.Add(copy.GetPixel(x - 1, y));
                     c.Add(copy.GetPixel(x, y));
-                    if (x + 1 < currentBitmap.Width) c.Add(copy.GetPixel(x + 1, y));
+                    if (x + 1 < CurrentBitmap.Width) c.Add(copy.GetPixel(x + 1, y));
                     if (x - 1 >= 0 && y - 1 >= 0) c.Add(copy.GetPixel(x - 1, y - 1));
-                    if (y - 1 >= 0) c.Add(currentBitmap.GetPixel(x, y - 1));
-                    if (x + 1 < currentBitmap.Width && y - 1 >= 0) c.Add(currentBitmap.GetPixel(x + 1, y - 1));
+                    if (y - 1 >= 0) c.Add(CurrentBitmap.GetPixel(x, y - 1));
+                    if (x + 1 < CurrentBitmap.Width && y - 1 >= 0) c.Add(CurrentBitmap.GetPixel(x + 1, y - 1));
 
                     average = CalculateAverage(c);
 
-                    currentBitmap.SetPixel(x, y, System.Drawing.Color.FromArgb(0, NormaliseColor(average.R), NormaliseColor(average.G),
+                    CurrentBitmap.SetPixel(x, y, System.Drawing.Color.FromArgb(0, NormaliseColor(average.R), NormaliseColor(average.G),
                         NormaliseColor(average.B)));
 
                     c.Clear();
                 }
             }
 
-            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
+            currentImage.Source = fileLoader.ConvertBitmap(CurrentBitmap);
         }
 
         private RGBColor CalculateAverage(List<System.Drawing.Color> pixels)
@@ -376,49 +245,152 @@ namespace wpf2
             return result;
         }
 
-        private void reset_button_Click(object sender, RoutedEventArgs e)
+        private void stretch_histogram_Click(object sender, RoutedEventArgs e)
         {
-            if(bitmapBackup != null)
-                currentImage.Source = fileLoader.ConvertBitmap(bitmapBackup);
-        }
+            RGBColor min = new RGBColor(), max = new RGBColor();
+            min.R = min.G = min.B = 255;
+            max.R = max.G = max.B = 0;
 
-        private RGBColor ParseRGBFromInput()
-        {
-            RGBColor color = new RGBColor();
+            System.Drawing.Color c;
 
-            List<bool> canBeParsed = new List<bool>();
-            int output;
-
-            canBeParsed.Add(Int32.TryParse(R_input.Text, out output));
-            color.R = output;
-
-            canBeParsed.Add(Int32.TryParse(G_input.Text, out output));
-            color.G = output;
-
-            canBeParsed.Add(Int32.TryParse(B_input.Text, out output));
-            color.B = output;
-
-            if (canBeParsed.Any(p => p == false))
+            for (int x = 0; x < CurrentBitmap.Width; x++)
             {
-                MessageBox.Show("Enter correct parameters!");
-                return null;
-            }
-            return color;
-        }
-
-        private ImageCodecInfo GetEncoder(ImageFormat format)
-        {
-            ImageCodecInfo[] codecs = ImageCodecInfo.GetImageEncoders();
-
-            foreach (ImageCodecInfo codec in codecs)
-            {
-                if (codec.FormatID == format.Guid)
+                for (int y = 0; y < CurrentBitmap.Height; y++)
                 {
-                    return codec;
+                    c = CurrentBitmap.GetPixel(x, y);
+
+                    if (c.R > max.R) max.R = c.R;
+                    if (c.G > max.G) max.G = c.G;
+                    if (c.B > max.B) max.B = c.B;
+                    if (c.R < min.R) min.R = c.R;
+                    if (c.G < min.G) min.G = c.G;
+                    if (c.B < min.B) min.B = c.B;
                 }
             }
 
-            return null;
+            for (int x = 0; x < CurrentBitmap.Width; x++)
+            {
+                for (int y = 0; y < CurrentBitmap.Height; y++)
+                {
+                    c = CurrentBitmap.GetPixel(x, y);
+
+                    CurrentBitmap.SetPixel(x, y, System.Drawing.Color.FromArgb(0, StretchColor(min.R, max.R, c.R),
+                        StretchColor(min.G, max.G, c.G), StretchColor(min.B, max.B, c.B)));
+                }
+            }
+
+            currentImage.Source = fileLoader.ConvertBitmap(CurrentBitmap);
+            UpdateHistogram();
+        }
+
+        private int StretchColor(int min, int max, byte color)
+        {
+            return NormaliseColor((int)((255 / (double)(max - min)) * (color - min)));
+        }
+
+        private void equalize_histogram_Click(object sender, RoutedEventArgs e)
+        {
+            double sumR = 0, sumG = 0, sumB = 0;
+
+            var r = new int[256];
+            var g = new int[256];
+            var b = new int[256];
+
+            var Dr = new double[256];
+            var Dg = new double[256];
+            var Db = new double[256];
+
+            System.Drawing.Color c;
+
+            for (int x = 0; x < CurrentBitmap.Width; x++)
+            {
+                for (int y = 0; y < CurrentBitmap.Height; y++)
+                {
+                    c = CurrentBitmap.GetPixel(x, y);
+                    r[c.R]++;
+                    g[c.G]++;
+                    b[c.B]++;
+                }
+            }
+
+            var numberOfPixels = CurrentBitmap.Width * CurrentBitmap.Height;
+            
+            for(int i = 0; i < 256; i++)
+            {
+                sumR += (double)r[i]/numberOfPixels;
+                sumB += (double)b[i]/numberOfPixels;
+                sumG += (double)g[i]/numberOfPixels;
+
+                Dr[i] += sumR;
+                Dg[i] += sumG;
+                Db[i] += sumB;
+            }
+
+            var LUTr = LUTEqualization(Dr);
+            var LUTg = LUTEqualization(Dg);
+            var LUTb = LUTEqualization(Db);
+
+            for (int x = 0; x < CurrentBitmap.Width; x++)
+            {
+                for (int y = 0; y < CurrentBitmap.Height; y++)
+                {
+                    c = CurrentBitmap.GetPixel(x, y);
+
+                    CurrentBitmap.SetPixel(x, y, System.Drawing.Color.FromArgb(0, NormaliseColor(LUTr[c.R]), 
+                        NormaliseColor(LUTg[c.G]), NormaliseColor(LUTb[c.B])));
+                }
+            }
+
+            currentImage.Source = fileLoader.ConvertBitmap(CurrentBitmap);
+            UpdateHistogram();
+        }
+
+        private int[] LUTEqualization(double[] Dcolor)
+        {
+            var LUT = new int[256];
+            double D0;
+
+            int i = 0;
+            while (Dcolor[i] == 0) i++;
+            D0 = Dcolor[i];
+
+            for (i = 0; i < 256; i++)
+            {
+                LUT[i] = (int)(((Dcolor[i] - D0) / (1 - D0)) * (256 - 1));
+            }
+
+            return LUT;
+        }
+
+        private void apply_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedOption = filter_selection.SelectedIndex;
+
+            switch (selectedOption)
+            {
+                case 0:
+                    break;
+                case 1:
+                    break;
+                case 2:
+                    break;
+                case 3:
+                    break;
+                case 4:
+                    break;
+            }
+
+            UpdateHistogram();
+        }
+
+        private void reset_Click(object sender, RoutedEventArgs e)
+        {
+            if (bitmapBackup != null)
+            {
+                currentImage.Source = fileLoader.ConvertBitmap(bitmapBackup);
+                CurrentBitmap = new Bitmap(bitmapBackup);
+            }
+                
         }
 
 
