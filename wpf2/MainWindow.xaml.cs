@@ -387,7 +387,7 @@ namespace wpf2
 
             var copy = new Bitmap(currentBitmap);
 
-            int windowSize = 3; // px
+            int windowSize = 10; // px
 
             for (int x = 0; x < currentBitmap.Width; x++)
             {
@@ -466,25 +466,23 @@ namespace wpf2
             {
                 for (int y = 1; y < currentBitmap.Height - 1; y++)
                 {
-                    var pixelX = (sobelX[0,0] * copy.GetPixel(x - 1, y - 1).GetGrayScale()) + 
-                                (sobelX[0,1] * copy.GetPixel(x, y - 1).GetGrayScale()) + 
-                                (sobelX[0,2] * copy.GetPixel(x + 1, y - 1).GetGrayScale()) +
-                                (sobelX[1,0] * copy.GetPixel(x - 1, y).GetGrayScale()) + 
-                                (sobelX[1,1] * copy.GetPixel(x, y).GetGrayScale()) + 
-                                (sobelX[1,2] * copy.GetPixel(x + 1, y).GetGrayScale()) +
-                                (sobelX[2,0] * copy.GetPixel(x - 1, y + 1).GetGrayScale()) + 
-                                (sobelX[2,1] * copy.GetPixel(x, y + 1).GetGrayScale()) + 
-                                (sobelX[2,2] * copy.GetPixel(x + 1, y + 1).GetGrayScale());
+                    var aa = copy.GetPixel(x - 1, y - 1).GetGrayScale();
+                    var ab = copy.GetPixel(x, y - 1).GetGrayScale();
+                    var ac = copy.GetPixel(x + 1, y - 1).GetGrayScale();
+                    var ba = copy.GetPixel(x - 1, y).GetGrayScale();
+                    var bb = copy.GetPixel(x, y).GetGrayScale();
+                    var bc = copy.GetPixel(x + 1, y).GetGrayScale();
+                    var ca = copy.GetPixel(x - 1, y + 1).GetGrayScale();
+                    var cb = copy.GetPixel(x, y + 1).GetGrayScale();
+                    var cc = copy.GetPixel(x + 1, y + 1).GetGrayScale();
 
-                    var pixelY = (sobelY[0, 0] * copy.GetPixel(x - 1, y - 1).GetGrayScale()) +
-                                (sobelY[0, 1] * copy.GetPixel(x, y - 1).GetGrayScale()) +
-                                (sobelY[0, 2] * copy.GetPixel(x + 1, y - 1).GetGrayScale()) +
-                                (sobelY[1, 0] * copy.GetPixel(x - 1, y).GetGrayScale()) +
-                                (sobelY[1, 1] * copy.GetPixel(x, y).GetGrayScale()) +
-                                (sobelY[1, 2] * copy.GetPixel(x + 1, y).GetGrayScale()) +
-                                (sobelY[2, 0] * copy.GetPixel(x - 1, y + 1).GetGrayScale()) +
-                                (sobelY[2, 1] * copy.GetPixel(x, y + 1).GetGrayScale()) +
-                                (sobelY[2, 2] * copy.GetPixel(x + 1, y + 1).GetGrayScale());
+                    var pixelX = (sobelX[0,0] * aa) + (sobelX[0,1] * ab) + (sobelX[0,2] * ac) +
+                                (sobelX[1,0] * ba) + (sobelX[1,1] * bb) + (sobelX[1,2] * bc) +
+                                (sobelX[2,0] * ca) + (sobelX[2,1] * cb) + (sobelX[2,2] * cc);
+
+                    var pixelY = (sobelY[0, 0] * aa) + (sobelY[0, 1] * ab) +  (sobelY[0, 2] * ac) +
+                                (sobelY[1, 0] * ba) + (sobelY[1, 1] * bb) + (sobelY[1, 2] * bc) +
+                                (sobelY[2, 0] * ca) + (sobelY[2, 1] * cb) + (sobelY[2, 2] * cc);
 
                     int value = (int)Math.Ceiling(Math.Sqrt((pixelX * pixelX) + (pixelY * pixelY)));
                     value = NormaliseColor(value * 255 / 700);
@@ -504,8 +502,8 @@ namespace wpf2
             var copy = new Bitmap(currentBitmap);
 
             int[,] matrix = {{0, -1, 0},
-                                {-1, 5, -1},
-                                {0, -1, 0}};
+                            {-1, 5, -1},
+                            {0, -1, 0}};
 
             for (int x = 1; x < currentBitmap.Width - 1; x++)
             {
@@ -550,15 +548,15 @@ namespace wpf2
             int windowSize = 10;
             double sigma = 100;
 
+            List<double> gauss = GaussFunction(windowSize, sigma);
+            double gaussSum = gauss.Sum(c => c);
+            for (int i = 0; i < gauss.Count; i++)
+                gauss[i] /= gaussSum;
+
             for (int x = 0; x < currentBitmap.Width; x++)
             {
                 for (int y = 0; y < currentBitmap.Height; y++)
                 {
-                    List<double> gauss = GaussFunction(windowSize, sigma);
-                    double gaussSum = gauss.Sum(c => c);
-                    for (int i = 0; i < gauss.Count; i++)
-                        gauss[i] /= gaussSum;
-
                     List<System.Drawing.Color> neighbours = GetNeighbours(x, y, copy, windowSize);
                     List<RGBColorDouble> gaussedColors = new();
                     for (int i = 0; i < neighbours.Count; i++)
