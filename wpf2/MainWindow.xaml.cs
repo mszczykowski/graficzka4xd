@@ -1,22 +1,14 @@
 ﻿using Emgu.CV;
+using Emgu.CV.Ocl;
+using Emgu.CV.Reg;
 using Emgu.CV.Structure;
 using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Imaging;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 using wpf2.Models;
 
 namespace wpf2
@@ -79,7 +71,7 @@ namespace wpf2
         {
             OpenFileDialog openFileDialog = new OpenFileDialog
             {
-                InitialDirectory = @"D:\Downloads\ppm-obrazy-testowe\ppm-obrazy-testowe",
+                InitialDirectory = @"C:\Downloads",
                 Filter = "Images|*.ppm;*.jpg;*.jpeg",
                 RestoreDirectory = true,
                 Title = "Wybierz plik",
@@ -365,22 +357,136 @@ namespace wpf2
         private void apply_Click(object sender, RoutedEventArgs e)
         {
             var selectedOption = filter_selection.SelectedIndex;
+            var threshold = string.IsNullOrWhiteSpace(threshold_input.Text) ? "100" : threshold_input.Text;
 
             switch (selectedOption)
             {
                 case 0:
+                    BinarizationManual(int.Parse(threshold));
                     break;
                 case 1:
+                    BinarizationBlackPercentage(int.Parse(threshold));
                     break;
                 case 2:
-                    break;
-                case 3:
-                    break;
-                case 4:
+                    BinarizationMeanSelection();
                     break;
             }
 
             UpdateHistogram();
+        }
+
+        private void Binarize(Bitmap bitmap, int threshold)
+        {
+            for (int x = 0; x < bitmap.Width; x++)
+            {
+                for (int y = 0; y < bitmap.Height; y++)
+                {
+                    var color = bitmap.GetPixel(x, y).GetGrayScaleColor();
+                    if (color.R < threshold)
+                        color = Color.FromArgb(0, 0, 0);
+                    else
+                        color = Color.FromArgb(255, 255, 255);
+
+                    bitmap.SetPixel(x, y, color);
+                }
+            }
+        }
+
+        private void BinarizationManual(int threshold)
+        {
+            Binarize(CurrentBitmap, threshold);
+
+            currentImage.Source = fileLoader.ConvertBitmap(CurrentBitmap);
+        }
+
+        private void BinarizationBlackPercentage(int percentage)
+        {
+            List<int> grayScaleArray = new(256);
+            for (int i = 0; i < 256; i++)
+            {
+                grayScaleArray.Add(0);
+            }
+
+            for (int x = 0; x < CurrentBitmap.Width; x++)
+            {
+                for (int y = 0; y < CurrentBitmap.Height; y++)
+                {
+                    var colorIndex = CurrentBitmap.GetPixel(x, y).GetGrayScale();
+                    grayScaleArray[colorIndex]++;
+                }
+            }
+
+            var pixelsCount = CurrentBitmap.Width * CurrentBitmap.Height;
+            var sum = 0;
+
+            var threshold = 0;
+
+            for (int i = 0; i < 256; i++)
+            {
+                if (sum >= (pixelsCount * ((float)percentage / 100)))
+                {
+                    threshold = i;
+                    break;
+                }
+
+                sum += grayScaleArray[i];
+            }
+
+            Binarize(CurrentBitmap, threshold);
+
+            currentImage.Source = fileLoader.ConvertBitmap(CurrentBitmap);
+        }
+
+        private void BinarizationMeanSelection()
+        {
+            int threshold = 100;
+            var meanOne = threshold;
+            var meanTwo = threshold;
+            var done = false;
+            while (!done)
+            {
+                var memOneCount = 0;
+                var memTwoCount = 0;
+                var memOneSum = 0;
+                var memTwoSum = 0;
+
+                for (var x = 0; x < CurrentBitmap.Width; x++)
+                {
+                    for (var y = 0; y < CurrentBitmap.Height; y++)
+                    {
+                        var colorGrayScale = CurrentBitmap.GetPixel(x, y).GetGrayScale();
+                        if (colorGrayScale < threshold)
+                        {
+                            memOneCount++;
+                            memOneSum += colorGrayScale;
+                        }
+                        else
+                        {
+                            memTwoCount++;
+                            memTwoSum += colorGrayScale;
+                        }
+                    }
+                }
+
+                var firstMean = memOneSum / memOneCount;
+                var secondMean = memTwoSum / memTwoCount;
+
+                if (meanOne == firstMean && meanTwo == secondMean)
+                {
+                    done = true;
+                    break;
+                }
+                else
+                {
+                    meanOne = firstMean;
+                    meanTwo = secondMean;
+                    threshold = (meanOne + meanTwo) / 2;
+                }
+            }
+
+            Binarize(CurrentBitmap, threshold);
+
+            currentImage.Source = fileLoader.ConvertBitmap(CurrentBitmap);
         }
 
         private void reset_Click(object sender, RoutedEventArgs e)
