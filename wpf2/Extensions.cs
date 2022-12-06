@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -35,6 +36,12 @@ namespace wpf2
         {
             var a = (byte)((source.R + source.G + source.B) / 3);
             return a;
+        }
+
+        public static Color GetGrayScaleColor(this System.Drawing.Color source)
+        {
+            var a = (byte)((source.R + source.G + source.B) / 3);
+            return Color.FromArgb(a, a, a);
         }
     }
 }

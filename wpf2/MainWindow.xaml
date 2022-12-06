@@ -41,6 +41,12 @@
                 <ComboBoxItem>Wykrywania krawędzi</ComboBoxItem>
                 <ComboBoxItem>Górnoprzepustowy wyostrzający</ComboBoxItem>
                 <ComboBoxItem>Rozmycie gaussowskie</ComboBoxItem>
+                <ComboBoxItem>Dylatacja</ComboBoxItem>
+                <ComboBoxItem>Erozja</ComboBoxItem>
+                <ComboBoxItem>Otwarcie</ComboBoxItem>
+                <ComboBoxItem>Domknięcie</ComboBoxItem>
+                <ComboBoxItem>Hit-or-miss Pocienianie</ComboBoxItem>
+                <ComboBoxItem>Hit-or-miss Pogrubianie</ComboBoxItem>
             </ComboBox>
             <Button x:Name="filter_button" Content="Aplly filter" Margin="5 0" Click="filter_button_Click"/>
             <Button x:Name="reset_button" Content="Reset" Margin="5 0" Click="reset_button_Click"/>

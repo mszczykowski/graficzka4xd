@@ -17,6 +17,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 using wpf2.Models;
+using Color = System.Drawing.Color;
 
 namespace wpf2
 {
@@ -310,6 +311,9 @@ namespace wpf2
         {
             var selectedFilter = filter_selection.SelectedIndex;
 
+            bool dilateBlackPixel = false;
+            bool erodeBlackPixel = true;
+
             switch (selectedFilter)
             {
                 case 0:
@@ -326,6 +330,24 @@ namespace wpf2
                     break;
                 case 4:
                     GaussFilter();
+                    break;
+                case 5:
+                    Dilation(dilateBlackPixel);
+                    break;
+                case 6:
+                    Erosion(erodeBlackPixel);
+                    break;
+                case 7:
+                    MorphologicalOpening(erodeBlackPixel, dilateBlackPixel);
+                    break;
+                case 8:
+                    MorphologicalClosing();
+                    break;
+                case 9:
+                    HitOrMiss(true);
+                    break;
+                case 10:
+                    HitOrMiss(false);
                     break;
             }
         }
@@ -594,6 +616,351 @@ namespace wpf2
             }
 
             return list;
+        }
+
+        private void Binarize(Bitmap bitmap, int threshold)
+        {
+            for (int x = 0; x < bitmap.Width; x++)
+            {
+                for (int y = 0; y < bitmap.Height; y++)
+                {
+                    var color = bitmap.GetPixel(x, y).GetGrayScaleColor();
+                    if (color.R < threshold)
+                        color = Color.FromArgb(0, 0, 0);
+                    else
+                        color = Color.FromArgb(255, 255, 255);
+
+                    bitmap.SetPixel(x, y, color);
+                }
+            }
+        }
+
+        private Bitmap BinarizationMeanSelection()
+        {
+            int threshold = 100;
+            var meanOne = threshold;
+            var meanTwo = threshold;
+            var done = false;
+            while (!done)
+            {
+                var memOneCount = 0;
+                var memTwoCount = 0;
+                var memOneSum = 0;
+                var memTwoSum = 0;
+
+                for (var x = 0; x < currentBitmap.Width; x++)
+                {
+                    for (var y = 0; y < currentBitmap.Height; y++)
+                    {
+                        var colorGrayScale = currentBitmap.GetPixel(x, y).GetGrayScale();
+                        if (colorGrayScale < threshold)
+                        {
+                            memOneCount++;
+                            memOneSum += colorGrayScale;
+                        }
+                        else
+                        {
+                            memTwoCount++;
+                            memTwoSum += colorGrayScale;
+                        }
+                    }
+                }
+
+                var firstMean = memOneSum / memOneCount;
+                var secondMean = memTwoSum / memTwoCount;
+
+                if (meanOne == firstMean && meanTwo == secondMean)
+                {
+                    done = true;
+                    break;
+                }
+                else
+                {
+                    meanOne = firstMean;
+                    meanTwo = secondMean;
+                    threshold = (meanOne + meanTwo) / 2;
+                }
+            }
+
+            Binarize(currentBitmap, threshold);
+
+            return currentBitmap;
+        }
+
+        private void Dilation(bool dilateBackgroundPixel, bool wasAveraged = false)
+        {
+            if (currentBitmap == null) return;
+
+            if(!wasAveraged)
+                BinarizationMeanSelection();
+
+            int width = currentBitmap.Width;
+            int height = currentBitmap.Height;
+
+            int[] output = new int[width * height];
+
+            int targetValue = (dilateBackgroundPixel == true) ? 0 : 255;
+
+            int reverseValue = (targetValue == 255) ? 0 : 255;
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (currentBitmap.GetPixel(x, y).GetGrayScale() == targetValue)
+                    {
+                        bool flag = false;
+                        for (int ty = y - 1; ty <= y + 1 && flag == false; ty++)
+                        {
+                            for (int tx = x - 1; tx <= x + 1 && flag == false; tx++)
+                            {
+                                if (ty >= 0 && ty < height && tx >= 0 && tx < width)
+                                {
+                                    if (currentBitmap.GetPixel(tx, ty).GetGrayScale() != targetValue)
+                                    {
+                                        flag = true;
+                                        output[x + y * width] = reverseValue;
+                                    }
+                                }
+                            }
+                        }
+                        if (flag == false)
+                        {
+                            output[x + y * width] = targetValue;
+                        }
+                    }
+                    else
+                    {
+                        output[x + y * width] = reverseValue;
+                    }
+                }
+            }
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int v = output[x + y * width];
+                    currentBitmap.SetPixel(x, y, Color.FromArgb(v, v, v));
+                }
+            }
+
+            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
+        }
+
+        private void Erosion(bool erodeForegroundPixel, bool wasAveraged = false)
+        {
+            if (currentBitmap == null) return;
+
+            if (!wasAveraged)
+                BinarizationMeanSelection();
+
+            int width = currentBitmap.Width;
+            int height = currentBitmap.Height;
+
+            int[] output = new int[width * height];
+
+            int targetValue = (erodeForegroundPixel == true) ? 0 : 255;
+
+            int reverseValue = (targetValue == 255) ? 0 : 255;
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (currentBitmap.GetPixel(x, y).GetGrayScale() == targetValue)
+                    {
+                        bool flag = false;
+                        for (int ty = y - 1; ty <= y + 1 && flag == false; ty++)
+                        {
+                            for (int tx = x - 1; tx <= x + 1 && flag == false; tx++)
+                            {
+                                if (ty >= 0 && ty < height && tx >= 0 && tx < width)
+                                {
+                                    if (currentBitmap.GetPixel(tx, ty).GetGrayScale() != targetValue)
+                                    {
+                                        flag = true;
+                                        output[x + y * width] = reverseValue;
+                                    }
+                                }
+                            }
+                        }
+                        if (flag == false)
+                        {
+                            output[x + y * width] = targetValue;
+                        }
+                    }
+                    else
+                    {
+                        output[x + y * width] = reverseValue;
+                    }
+                }
+            }
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int v = output[x + y * width];
+                    currentBitmap.SetPixel(x, y, Color.FromArgb(v, v, v));
+                }
+            }
+
+            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
+        }
+
+        private void MorphologicalOpening(bool erodeForegroundPixel, bool dilateBackgroundPixel)
+        {
+            Erosion(erodeForegroundPixel);
+            Dilation(dilateBackgroundPixel, true);
+        }
+
+        private void MorphologicalClosing()
+        {
+            Dilation(true);
+            Erosion(true, true);
+        }
+
+        private int[,] SetArray()
+        {
+            int[,] values = new int[currentBitmap.Height, currentBitmap.Width]; 
+
+            for (int i = 0; i < currentBitmap.Height; i++)
+            {
+                for (int j = 0; j < currentBitmap.Width; j++)
+                {
+                    var color = currentBitmap.GetPixel(j, i).GetGrayScale();
+                    if (color == 0)
+                    {
+                        values[i, j] = 1;
+                    }
+                    else
+                    {
+                        values[i, j] = 0;
+                    }
+                }
+            }
+
+            return values;
+        }
+
+        static int a = -1;
+
+        int[,] mask1 = { { 0, 0, 0 }, { a, 1, a }, { 1, 1, 1 } };
+        int[,] mask2 = { { 1, a, 0 }, { 1, 1, 0 }, { 1, a, 0 } };
+        int[,] mask3 = { { 1, 1, 1 }, { a, 1, a }, { 0, 0, 0 } };
+        int[,] mask4 = { { 0, a, 1 }, { 0, 1, 1 }, { 0, a, 1 } };
+        int[,] mask5 = { { a, 0, 0 }, { 1, 1, 0 }, { a, 1, a } };
+        int[,] mask6 = { { a, 1, a }, { 1, 1, 0 }, { a, 0, 0 } };
+        int[,] mask7 = { { a, 1, a }, { 0, 1, 1 }, { 0, 0, a } };
+        int[,] mask8 = { { 0, 0, a }, { 0, 1, 1 }, { a, 1, a } };
+
+        int[,] maskB1 = { { 1, 1, a }, { 1, 0, a }, { 1, a, 0 } };
+        int[,] maskB2 = { { a, a, 0 }, { 1, 0, a }, { 1, 1, 1 } };
+        int[,] maskB3 = { { 0, a, 1 }, { a, 0, 1 }, { a, 1, 1 } };
+        int[,] maskB4 = { { 1, 1, 1 }, { a, 0, 1 }, { 0, a, a } };
+        int[,] maskB5 = { { a, 1, 1 }, { a, 0, 1 }, { 0, a, 1 } };
+        int[,] maskB6 = { { 1, 1, 1 }, { 1, 0, a }, { a, a, 0 } };
+        int[,] maskB7 = { { 1, a, 0 }, { 1, 0, a }, { 1, 1, a } };
+        int[,] maskB8 = { { 0, a, a }, { a, 0, 1 }, { 1, 1, 1 } };
+
+        private void HitOrMiss(bool thinning = true)
+        {
+            if (currentBitmap == null) return;
+
+            BinarizationMeanSelection();
+
+            List<int[,]> masks = new List<int[,]>();
+
+            if(thinning)
+            {
+                masks.Add(mask1);
+                masks.Add(mask2);
+                masks.Add(mask3);
+                masks.Add(mask4);
+                masks.Add(mask5);
+                masks.Add(mask6);
+                masks.Add(mask7);
+                masks.Add(mask8);
+            }
+            else
+            {
+                masks.Add(maskB1);
+                masks.Add(maskB2);
+                masks.Add(maskB3);
+                masks.Add(maskB4);
+                masks.Add(maskB5);
+                masks.Add(maskB6);
+                masks.Add(maskB7);
+                masks.Add(maskB8);
+            }
+
+            int width = currentBitmap.Width;
+            int height = currentBitmap.Height;
+
+            int[,] values = SetArray();
+
+            var repeat = true;
+
+            do
+            {
+                repeat = false;
+
+                for (int m = 0; m < 8; m++)
+                {
+                    for (int i = 1; i < height - 1; i++)
+                    {
+                        for (int j = 1; j < width - 1; j++)
+                        {
+                            if ((thinning && values[i, j] == 1) || (!thinning && values[i, j] == 0))
+                            {
+                                var eq = true;
+                                int rm = 0, cm = 0;
+                                for (int r = i - 1; r <= i + 1; r++)
+                                {
+                                    cm = 0;
+                                    for (int c = j - 1; c <= j + 1; c++)
+                                    {
+                                        if (values[r, c] != masks[m][rm, cm])
+                                        {
+                                            if (masks[m][rm, cm] >= 0)
+                                            {
+                                                eq = false;
+                                            }
+
+                                        }
+                                        cm++;
+                                    }
+                                    rm++;
+                                }
+
+                                if (eq == true)
+                                {
+                                    if(thinning)
+                                        values[i, j] = 0;
+                                    else
+                                        values[i, j] = 1;
+                                    repeat = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+            } while (repeat);
+
+            for (int i = 0; i < height; i++)
+            {
+                for (int j = 0; j < width; j++)
+                {
+                    if (values[i, j] == 1)
+                        currentBitmap.SetPixel(j, i, Color.FromArgb(0, 0, 0));
+                    else
+                        currentBitmap.SetPixel(j, i, Color.FromArgb(255, 255, 255));
+                }
+            }
+
+            currentImage.Source = fileLoader.ConvertBitmap(currentBitmap);
         }
 
         private void reset_button_Click(object sender, RoutedEventArgs e)
